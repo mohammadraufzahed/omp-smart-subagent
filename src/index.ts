@@ -9,6 +9,13 @@ export default function (pi: ExtensionAPI): void {
   // Register /subagent slash command
   registerSubagentCommands(pi);
 
+  // Inform session and inject instructions into context
+  pi.on("session_start", async (_event, ctx) => {
+    if (ctx.agent?.kind === "main") {
+      ctx.ui.notify("Jev SubAgent Router active (architect, coder, researcher ready)", "info");
+    }
+  });
+
   // Intercept sub-agent spawn before model patterns resolve
   pi.on("before_subagent_spawn", async (event, ctx) => {
     const config = loadConfig();
