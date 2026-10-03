@@ -1,34 +1,27 @@
 # omp-smart-subagent
 
-Intelligent sub-agent offloading and dynamic model routing plugin for `omp`.
+Intelligent sub-agent offloading and dynamic model routing plugin for `omp`, powered exclusively by **Jev System One AI Judge** and **OpenRouter**.
 
 ## Features
 
-- **Automated Model Routing**: Automatically categorizes sub-agent assignments into **HIGH** (reasoning-intensive) and **CHEAP** (mechanical/scouting) tiers.
-- **Jev & OpenRouter Integration**: Supports OpenRouter model lists and TypeSafe / Jev (`typesafe/jev-latest`) as an ultra-fast System One AI judge for evaluating task complexity.
-- **Dynamic Session Model Selection**: Reads authenticated models directly from `ctx.models.list()`, picking the best match without hardcoded endpoints.
-- **Interactive TUI Setup**: Run `/subagent setup` inside `omp` to configure modes, preferred models, and provider preferences.
-- **Built-in Specialized Agents**:
-  - `architect`: High-level system design and reviews (routed to high reasoning).
+- **Jev-Powered Classification**: Relies exclusively on Jev (`~typesafe/jev-latest` on OpenRouter, or native `typesafe/jev-latest` / System One) to evaluate every sub-agent task into **HIGH** or **CHEAP** complexity.
+- **Interactive `/subagent setup`**: Prompts the user directly in the TUI for:
+  - OpenRouter API key (`sk-or-...`)
+  - TypeSafe API key (optional)
+  - Preferred High-tier model (auto-populated from session `ctx.models.list()`)
+  - Preferred Cheap/Fast model
+- **Dynamic Model Matching**: Prioritizes OpenRouter providers and maps to candidates live from the session catalog.
+- **Built-in Sub-Agents**:
+  - `architect`: High-level system design and reviews.
   - `coder`: Fast, accurate implementation and bug fixes.
   - `researcher`: Read-only discovery and symbol mapping.
 
-## Installation
+## Commands
 
-Link the plugin into `omp`:
+- `/subagent setup` — Interactive wizard to input API tokens and pick preferred models.
+- `/subagent status` — Display current configuration and masked keys.
 
-```bash
-omp plugin link ./omp-smart-subagent
-```
-
-## Configuration & Commands
-
-Inside `omp`:
-
-- `/subagent setup` — Launch interactive configuration wizard (select mode, preferred high/cheap models, OpenRouter prioritization, and Jev judge).
-- `/subagent status` — Show current routing policies and active configuration.
-
-Configuration is automatically saved to `~/.omp/subagent-router.json`.
+Configuration is securely persisted to `~/.omp/subagent-router.json`.
 
 ## License
 

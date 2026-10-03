@@ -3,85 +3,150 @@ import type { SubagentRouterConfig } from "./config";
 
 export type Tier = "cheap" | "high";
 
-export async function classifyTaskDifficulty(
+const SYSTEM_PROMPT =
+  "You are Jev, a specialized System One judge. " +
+  "Classify this task for an AI subagent into HIGH or CHEAP complexity. " +
+  "Criteria:\n" +
+  "- HIGH: Complex architectural decisions, multi-file refactoring, concurrency, security audits, algorithm design, hard debugging.\n" +
+  "- CHEAP: Mechanical edits, simple bug fixes, docs/comments, routine unit tests, simple scripts, formatting.\n" +
+  "Reply strictly with a single word: HIGH or CHEAP.";
+
+async function judgeViaOpenRouter(
   taskPrompt: string,
-  agentName: string,
+  apiKey: string
+): Promise<Tier | undefined> {
+  const url = "https://openrouter.ai/api/v1/chat/completions";
+  const body = {
+    model: "~typesafe/jev-latest",
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: `Task: ${taskPrompt.slice(0, 1500)}` },
+    ],
+    max_tokens: 16,
+    temperature: 0,
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": "https://github.com/mohammadraufzahed/omp-smart-subagent",
+      "X-Title": "omp-smart-subagent",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    return undefined;
+  }
+
+  const json = (await res.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const text = json.choices?.[0]?.message?.content?.trim().toUpperCase() ?? "";
+  if (text.includes("HIGH")) return "high";
+  if (text.includes("CHEAP")) return "cheap";
+  return undefined;
+}
+
+async function judgeViaTypeSafe(
+  taskPrompt: string,
+  apiKey: string
+): Promise<Tier | undefined> {
+  const url = "https://api.typesafe.ai/v1/systemone";
+  const body = {
+    model: "jev-latest",
+    prompt: `${SYSTEM_PROMPT}\n\nTask: ${taskPrompt.slice(0, 1500)}`,
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    return undefined;
+  }
+
+  const json = (await res.json()) as { answer?: string; text?: string };
+  const text = (json.answer ?? json.text ?? "").trim().toUpperCase();
+  if (text.includes("HIGH")) return "high";
+  if (text.includes("CHEAP")) return "cheap";
+  return undefined;
+}
+
+export async function classifyTaskWithJev(
+  taskPrompt: string,
   ctx: ExtensionContext,
   config: SubagentRouterConfig
 ): Promise<{ tier: Tier; reason: string }> {
-  // 1. Direct agent-role affinities
-  if (agentName === "architect" || agentName === "security-reviewer" || agentName === "reviewer") {
-    return { tier: "high", reason: `Agent role '${agentName}' requires deep reasoning` };
-  }
-  if (agentName === "researcher" || agentName === "scout") {
-    return { tier: "cheap", reason: `Agent role '${agentName}' is fast read-only scouting` };
-  }
-
-  // 2. Fixed policy overrides
-  if (config.mode === "always_cheap") {
-    return { tier: "cheap", reason: "Policy: forced cheap mode" };
-  }
-  if (config.mode === "always_high") {
-    return { tier: "high", reason: "Policy: forced high mode" };
-  }
-
-  // 3. AI Classifier via Jev or Ephemeral Turn
-  if (config.useJevJudge && ctx.runEphemeralTurn) {
+  // 1. Direct API call to OpenRouter if openrouterApiKey is present
+  const orKey = config.openrouterApiKey || process.env.OPENROUTER_API_KEY;
+  if (orKey) {
     try {
-      const evaluationPrompt = `You are a task complexity classifier for an AI sub-agent.
-Analyze the following sub-agent task:
-"""
-${taskPrompt.slice(0, 1500)}
-"""
+      const decision = await judgeViaOpenRouter(taskPrompt, orKey);
+      if (decision) {
+        return {
+          tier: decision,
+          reason: `Jev Judge (OpenRouter ~typesafe/jev-latest) classified task as ${decision.toUpperCase()}`,
+        };
+      }
+    } catch {
+      // Fall through to other Jev channels
+    }
+  }
 
-Classification criteria:
-- "HIGH": Complex architectural decisions, multi-file refactoring, concurrency/race conditions, security auditing, novel algorithm design, ambiguous debugging.
-- "CHEAP": Mechanical code changes, simple bug fixes, documentation/comments, routine unit tests, simple scripts, formatting.
+  // 2. Direct API call to TypeSafe if typesafeApiKey is present
+  const tsKey = config.typesafeApiKey || process.env.TYPESAFE_API_KEY;
+  if (tsKey) {
+    try {
+      const decision = await judgeViaTypeSafe(taskPrompt, tsKey);
+      if (decision) {
+        return {
+          tier: decision,
+          reason: `Jev Judge (TypeSafe native jev-latest) classified task as ${decision.toUpperCase()}`,
+        };
+      }
+    } catch {
+      // Fall through to ephemeral turn
+    }
+  }
 
-Reply strictly with a single word: "HIGH" or "CHEAP".`;
-
+  // 3. In-session judge using runEphemeralTurn if available
+  if (ctx.runEphemeralTurn) {
+    try {
       const res = await ctx.runEphemeralTurn({
-        promptText: evaluationPrompt,
+        promptText: `${SYSTEM_PROMPT}\n\nTask: ${taskPrompt.slice(0, 1500)}`,
         tools: false,
         maxTokens: 16,
       });
 
       const reply = (res?.replyText ?? "").trim().toUpperCase();
       if (reply.includes("HIGH")) {
-        return { tier: "high", reason: "AI classifier determined task is HIGH complexity" };
+        return {
+          tier: "high",
+          reason: "Jev Judge (in-session ephemeral evaluation) classified task as HIGH",
+        };
       }
       if (reply.includes("CHEAP")) {
-        return { tier: "cheap", reason: "AI classifier determined task is CHEAP/mechanical" };
+        return {
+          tier: "cheap",
+          reason: "Jev Judge (in-session ephemeral evaluation) classified task as CHEAP",
+        };
       }
     } catch {
-      // Fallback to heuristic if ephemeral inference fails or is unavailable
+      // Ephemeral turn unavailable or failed
     }
   }
 
-  // 4. Heuristic evaluation fallback
-  const highKeywords = [
-    "architect",
-    "architecture",
-    "refactor",
-    "redesign",
-    "security",
-    "vulnerability",
-    "concurrency",
-    "deadlock",
-    "race condition",
-    "memory leak",
-    "performance",
-    "optimize",
-    "audit",
-    "benchmark",
-  ];
-
-  const lower = taskPrompt.toLowerCase();
-  const matchedKeyword = highKeywords.find((kw) => lower.includes(kw));
-
-  if (matchedKeyword) {
-    return { tier: "high", reason: `Heuristic: detected keyword '${matchedKeyword}'` };
-  }
-
-  return { tier: "cheap", reason: "Heuristic: standard execution/mechanical task" };
+  // 4. Default fallback when Jev credentials are completely missing
+  return {
+    tier: "cheap",
+    reason: "Jev Judge uncontactable (no key configured via /subagent setup) -> defaulted to CHEAP",
+  };
 }

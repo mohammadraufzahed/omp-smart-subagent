@@ -3,11 +3,10 @@ import * as path from "node:path";
 import * as fs from "node:fs";
 
 export interface SubagentRouterConfig {
-  mode: "smart_judge" | "heuristic" | "always_high" | "always_cheap";
+  openrouterApiKey?: string;
+  typesafeApiKey?: string;
   preferredCheapModel?: string;
   preferredHighModel?: string;
-  preferOpenRouter: boolean;
-  useJevJudge: boolean;
 }
 
 const CONFIG_PATH = path.join(os.homedir(), ".omp", "subagent-router.json");
@@ -21,11 +20,7 @@ export function loadConfig(): SubagentRouterConfig {
   } catch {
     // ignore parse error, fallback to default
   }
-  return {
-    mode: "smart_judge",
-    preferOpenRouter: true,
-    useJevJudge: true,
-  };
+  return {};
 }
 
 export function saveConfig(cfg: SubagentRouterConfig): void {

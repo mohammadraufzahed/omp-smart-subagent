@@ -1,10 +1,10 @@
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { loadConfig } from "./config";
-import { classifyTaskDifficulty } from "./classifier";
+import { classifyTaskWithJev } from "./classifier";
 import { registerSubagentCommands } from "./commands";
 
 export default function (pi: ExtensionAPI): void {
-  pi.setLabel("Smart SubAgent Router");
+  pi.setLabel("Jev SubAgent Router");
 
   // Register /subagent slash command
   registerSubagentCommands(pi);
@@ -12,14 +12,13 @@ export default function (pi: ExtensionAPI): void {
   // Intercept sub-agent spawn before model patterns resolve
   pi.on("before_subagent_spawn", async (event, ctx) => {
     const config = loadConfig();
-    const agentName = (event.agent?.name ?? "task").toLowerCase();
     const available = ctx.models.list();
 
     if (!available || available.length === 0) {
       return {};
     }
 
-    // Extract task text if available via property check
+    // Extract task text safely
     let taskInput = "";
     if (event && typeof event === "object" && "task" in event) {
       const raw = (event as Record<string, unknown>)["task"];
@@ -28,26 +27,16 @@ export default function (pi: ExtensionAPI): void {
       }
     }
 
-    // 1. Determine intelligence tier (high vs cheap)
-    const { tier, reason } = await classifyTaskDifficulty(
-      taskInput,
-      agentName,
-      ctx,
-      config
-    );
+    // Rely exclusively on Jev judge for classification
+    const { tier, reason } = await classifyTaskWithJev(taskInput, ctx, config);
 
-    // 2. Helper to find candidate models based on priority list
-    const findModel = (patterns: string[]): string | undefined => {
-      let candidates = available;
+    // Prioritize OpenRouter candidates when available
+    const candidates = [
+      ...available.filter((m) => m.provider.toLowerCase() === "openrouter"),
+      ...available.filter((m) => m.provider.toLowerCase() !== "openrouter"),
+    ];
 
-      // When preferOpenRouter is true, sort openrouter models first
-      if (config.preferOpenRouter) {
-        candidates = [
-          ...available.filter((m) => m.provider.toLowerCase() === "openrouter"),
-          ...available.filter((m) => m.provider.toLowerCase() !== "openrouter"),
-        ];
-      }
-
+    const matchModel = (patterns: string[]): string | undefined => {
       for (const pattern of patterns) {
         const p = pattern.toLowerCase();
         const found = candidates.find((m) => {
@@ -55,7 +44,6 @@ export default function (pi: ExtensionAPI): void {
           const bareId = m.id.toLowerCase();
           return fullId.includes(p) || bareId.includes(p);
         });
-
         if (found) {
           return `${found.provider}/${found.id}`;
         }
@@ -65,11 +53,10 @@ export default function (pi: ExtensionAPI): void {
 
     let selectedModel: string | undefined;
 
-    // 3. Resolve model according to tier and configuration
     if (tier === "high") {
       selectedModel =
         config.preferredHighModel ??
-        findModel([
+        matchModel([
           "claude-3-7-sonnet",
           "claude-3-5-sonnet",
           "gpt-5",
@@ -82,7 +69,7 @@ export default function (pi: ExtensionAPI): void {
     } else {
       selectedModel =
         config.preferredCheapModel ??
-        findModel([
+        matchModel([
           "typesafe/jev-latest",
           "typesafe/jev",
           "jev-latest",
@@ -98,7 +85,7 @@ export default function (pi: ExtensionAPI): void {
     if (selectedModel) {
       return {
         model: selectedModel,
-        note: `SmartRouter [${tier.toUpperCase()}]: ${reason} -> ${selectedModel}`,
+        note: `JevJudge [${tier.toUpperCase()}]: ${reason} -> ${selectedModel}`,
       };
     }
 
