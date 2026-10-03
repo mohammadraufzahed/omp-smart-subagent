@@ -1,0 +1,26 @@
+{
+  "name": "omp-smart-subagent",
+  "version": "1.0.0",
+  "description": "Smart subagent offloading and intelligent model selection for omp with OpenRouter and Jev support",
+  "main": "src/index.ts",
+  "type": "module",
+  "keywords": [
+    "omp",
+    "omp-plugin",
+    "subagent",
+    "model-router",
+    "openrouter",
+    "jev"
+  ],
+  "author": "Mohammad Raufzahed",
+  "license": "MIT",
+  "omp": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "devDependencies": {
+    "@oh-my-pi/pi-coding-agent": "latest",
+    "typescript": "^5.0.0"
+  }
+}
